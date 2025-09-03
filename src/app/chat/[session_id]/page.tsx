@@ -290,7 +290,43 @@ export default function ChatPage() {
         }
     };
 
-    // Complete interview
+    // Test KB Training (for development only)
+    const testKbTraining = async () => {
+        if (!session_id) return;
+        
+        setCompleting(true);
+        setError(null);
+        
+        try {
+            const sessionData = parseSessionId(session_id);
+            const kbTrainingResponse = await fetch('http://localhost:8000/interview/test-kb-training', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_id: sessionData.user_id,
+                    email: sessionData.email,
+                    rag_id: agent_id
+                })
+            });
+
+            if (kbTrainingResponse.ok) {
+                const kbTrainingResult = await kbTrainingResponse.json();
+                console.log('Test KB training completed:', kbTrainingResult);
+                alert('KB Training completed successfully! Check console for details.');
+            } else {
+                const error = await kbTrainingResponse.text();
+                throw new Error(`KB Training failed: ${error}`);
+            }
+        } catch (err: any) {
+            setError(`KB Training error: ${err.message}`);
+            console.error('KB Training error:', err);
+        } finally {
+            setCompleting(false);
+        }
+    };
+
     const completeInterview = async () => {
         if (!session_id) return;
 
@@ -300,7 +336,6 @@ export default function ChatPage() {
         try {
             const sessionData = parseSessionId(session_id);
             
-            // Complete the interview using the new public endpoint
             const response = await fetch(`http://localhost:8000/chat/interview/complete/${session_id}`, {
                 method: 'POST'
             });
@@ -313,7 +348,6 @@ export default function ChatPage() {
             const result = await response.json();
             console.log('Interview completed:', result);
 
-            // Process the interview (generate PDF, upload to S3, etc.)
             try {
                 const processResponse = await fetch('http://localhost:8000/interview/process', {
                     method: 'POST',
@@ -335,6 +369,30 @@ export default function ChatPage() {
             } catch (processError) {
                 console.warn('Interview processing error:', processError);
                 // Don't fail the whole completion if processing fails
+            }
+
+            // Call the test KB training endpoint (independent of interview processing)
+            try {
+                const kbTrainingResponse = await fetch('http://localhost:8000/interview/test-kb-training', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: sessionData.user_id,
+                        email: sessionData.email
+                    })
+                });
+
+                if (kbTrainingResponse.ok) {
+                    const kbTrainingResult = await kbTrainingResponse.json();
+                    console.log('KB training completed:', kbTrainingResult);
+                } else {
+                    console.warn('KB training failed, but interview was processed');
+                }
+            } catch (kbTrainingError) {
+                console.warn('KB training error:', kbTrainingError);
+                // Don't fail the whole completion if KB training fails
             }
 
             // Update local state
@@ -432,6 +490,24 @@ export default function ChatPage() {
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                     <span>Typing...</span>
                                 </div>
+                            )}
+                            {process.env.NODE_ENV === 'development' && (
+                                <Button 
+                                    onClick={testKbTraining}
+                                    variant="outline" 
+                                    size="sm"
+                                    disabled={completing}
+                                    className="ml-2"
+                                >
+                                    {completing ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Testing KB Training...
+                                        </>
+                                    ) : (
+                                        'Test KB Training'
+                                    )}
+                                </Button>
                             )}
                         </div>
                     </div>
