@@ -262,20 +262,18 @@ export const emailThreadApi = {
 
 // Agent API functions
 export const agentApi = {
-    createAgentWithKB: async (user_id: string, prompt: string, token: string, name: string = "Interview Agent", description: string = "AI agent for conducting interviews") => {
+    createAgentWithKB: async (user_id: string, token: string, name: string = "Interview Agent", description: string = "AI agent for conducting interviews") => {
         return api.post('/agents/create', {
             user_id,
-            prompt,
             name,
             description,
             token
         });
     },
 
-    createChatAgent: async (user_id: string, prompt: string, token: string, name: string = "Chat Agent", description: string = "AI chat agent with knowledge base access") => {
+    createChatAgent: async (user_id: string, token: string, name: string = "Chat Agent", description: string = "AI chat agent with knowledge base access") => {
         return api.post('/agents/chat/create', {
             user_id,
-            prompt,
             name,
             description,
             token

@@ -44,8 +44,8 @@ interface SchedulerConfig {
 }
 
 interface AgentForm {
-    prompt: string;
     name: string;
+    description: string;
 }
 
 interface AccountConfig {
@@ -53,7 +53,7 @@ interface AccountConfig {
     api_key: string;
     agent_id?: string;
     rag_id?: string;
-    agent_prompt?: string;
+    chat_agent_id?: string;
     created_at?: string;
     updated_at?: string;
 }
@@ -66,6 +66,7 @@ export function SettingsPage() {
     const [smtpLoading, setSMTPLoading] = useState(false);
     const [schedulerLoading, setSchedulerLoading] = useState(false);
     const [agentLoading, setAgentLoading] = useState(false);
+    const [chatAgentLoading, setChatAgentLoading] = useState(false);
     const [loadingConfigs, setLoadingConfigs] = useState(true);
 
     const smtpForm = useForm<SMTPForm>({
@@ -87,24 +88,15 @@ export function SettingsPage() {
 
     const agentForm = useForm<AgentForm>({
         defaultValues: {
-            prompt: `You are a professional AI interview assistant. Your role is to:
+            name: 'Interview Agent',
+            description: 'AI agent for conducting interviews'
+        }
+    });
 
-1. **Conduct Professional Interviews**: Ask thoughtful, relevant questions to assess candidates' skills, experience, and cultural fit.
-
-2. **Be Conversational**: Maintain a friendly yet professional tone throughout the interview.
-
-3. **Ask Follow-up Questions**: Based on responses, ask clarifying questions to get deeper insights.
-
-4. **Assess Comprehensively**: Evaluate technical skills, soft skills, problem-solving abilities, and communication skills.
-
-5. **Provide Guidance**: If candidates seem stuck, provide gentle guidance or hints.
-
-6. **Be Adaptive**: Adjust your questioning style based on the role being interviewed for and the candidate's responses.
-
-7. **Conclude Effectively**: Summarize the interview and next steps.
-
-Remember to be patient, encouraging, and fair while maintaining professional standards.`,
-            name: 'Interview Agent'
+    const chatAgentForm = useForm<AgentForm>({
+        defaultValues: {
+            name: 'Chat Agent',
+            description: 'AI chat agent with knowledge base access'
         }
     });
 
@@ -148,12 +140,7 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
             try {
                 const account = await accountApi.getAccount(userId);
                 setAccountConfig(account);
-                if (account.agent_prompt) {
-                    agentForm.reset({
-                        prompt: account.agent_prompt,
-                        name: 'Interview Agent'
-                    });
-                }
+                // No need to reset form since we don't store agent prompts anymore
             } catch {
                 console.log('No account configuration found');
                 setAccountConfig(null);
@@ -163,7 +150,7 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
         } finally {
             setLoadingConfigs(false);
         }
-    }, [userId, smtpForm, schedulerForm, agentForm]);
+    }, [userId, smtpForm, schedulerForm]);
 
     useEffect(() => {
         loadConfigurations();
@@ -209,11 +196,8 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
             setAgentLoading(true);
             
             if (accountConfig?.agent_id) {
-                // Update existing agent prompt
-                await accountApi.updateAccount(userId, { 
-                    agent_prompt: data.prompt 
-                });
-                toast.success('Interview agent prompt updated successfully');
+                // Agent already exists, show message
+                toast.info('Interview agent already exists. System prompts are predefined and cannot be modified.');
             } else {
                 // Create new agent and KB
                 if (!token) {
@@ -222,9 +206,9 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                 
                 const result = await agentApi.createAgentWithKB(
                     userId, 
-                    data.prompt,
                     token,
-                    data.name
+                    data.name,
+                    data.description
                 );
                 toast.success('Interview agent and knowledge base created successfully');
                 console.log('Agent creation result:', result);
@@ -236,6 +220,44 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
             toast.error(error.message || 'Failed to save agent configuration');
         } finally {
             setAgentLoading(false);
+        }
+    };
+
+    const handleChatAgentSubmit = async (data: AgentForm) => {
+        if (!userId) return;
+
+        try {
+            setChatAgentLoading(true);
+            
+            if (accountConfig?.chat_agent_id) {
+                // Chat agent already exists, show message
+                toast.info('Chat agent already exists. System prompts are predefined and cannot be modified.');
+            } else {
+                // Create new chat agent and link with existing KB
+                if (!token) {
+                    throw new Error('Authentication token not available');
+                }
+                
+                if (!accountConfig?.rag_id) {
+                    throw new Error('No knowledge base found. Please create an interview agent first.');
+                }
+                
+                const result = await agentApi.createChatAgent(
+                    userId, 
+                    token,
+                    data.name,
+                    data.description
+                );
+                toast.success('Chat agent created and linked with knowledge base successfully');
+                console.log('Chat agent creation result:', result);
+            }
+            
+            await loadConfigurations(); // Reload to get updated config
+        } catch (error: any) {
+            console.error('Error saving chat agent configuration:', error);
+            toast.error(error.message || 'Failed to save chat agent configuration');
+        } finally {
+            setChatAgentLoading(false);
         }
     };
 
@@ -264,7 +286,7 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
             </div>
 
             <Tabs defaultValue="email-credentials" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="email-credentials" className="flex items-center gap-2">
                         <Mail className="h-4 w-4" />
                         Email Credentials
@@ -276,6 +298,10 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                     <TabsTrigger value="interview-agent" className="flex items-center gap-2">
                         <Bot className="h-4 w-4" />
                         Interview Agent
+                    </TabsTrigger>
+                    <TabsTrigger value="chat-agent" className="flex items-center gap-2">
+                        <Brain className="h-4 w-4" />
+                        Chat Agent
                     </TabsTrigger>
                 </TabsList>
 
@@ -474,7 +500,7 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                                 )}
                             </CardTitle>
                             <CardDescription>
-                                Configure your AI interview agent&apos;s instructions and behavior. The agent will conduct interviews based on this prompt.
+                                Configure your AI interview agent&apos;s name and description. The system prompt is predefined for optimal interview performance.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -488,16 +514,16 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="agent-prompt">Agent Instructions</Label>
+                                    <Label htmlFor="agent-description">Agent Description</Label>
                                     <Textarea
-                                        id="agent-prompt"
-                                        {...agentForm.register('prompt')}
-                                        placeholder="Enter detailed instructions for your interview agent..."
-                                        rows={15}
+                                        id="agent-description"
+                                        {...agentForm.register('description')}
+                                        placeholder="AI agent for conducting interviews"
+                                        rows={3}
                                         className="resize-none"
                                     />
                                     <p className="text-sm text-gray-500">
-                                        This prompt defines how your AI agent will conduct interviews. Be specific about the interview style, types of questions to ask, and how to assess candidates.
+                                        A brief description of what this agent does. The system prompt is predefined and optimized for conducting professional interviews.
                                     </p>
                                 </div>
                                 <Button
@@ -506,7 +532,7 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                                     className="flex items-center gap-2"
                                 >
                                     <Save className="h-4 w-4" />
-                                    {agentLoading ? 'Creating...' : (accountConfig?.agent_id ? 'Update Agent' : 'Create Agent & Knowledge Base')}
+                                    {agentLoading ? 'Creating...' : (accountConfig?.agent_id ? 'Agent Already Created' : 'Create Agent & Knowledge Base')}
                                 </Button>
                             </form>
 
@@ -532,6 +558,93 @@ Remember to be patient, encouraging, and fair while maintaining professional sta
                                     </div>
                                     <p className="text-sm text-yellow-700">
                                         Create an interview agent to start conducting AI-powered interviews. The system will automatically create a knowledge base and link it to your agent.
+                                    </p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Chat Agent Tab */}
+                <TabsContent value="chat-agent" className="space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Brain className="h-5 w-5" />
+                                Chat Agent Configuration
+                                {accountConfig?.chat_agent_id && (
+                                    <Badge variant="outline" className="ml-2">
+                                        <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
+                                        Agent Created
+                                    </Badge>
+                                )}
+                                {accountConfig?.rag_id && (
+                                    <Badge variant="outline" className="ml-1">
+                                        <Brain className="h-3 w-3 mr-1 text-purple-600" />
+                                        KB Linked
+                                    </Badge>
+                                )}
+                            </CardTitle>
+                            <CardDescription>
+                                Create a chat agent that can answer questions using your knowledge base. Requires an existing interview agent with knowledge base.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={chatAgentForm.handleSubmit(handleChatAgentSubmit)} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="chat-agent-name">Agent Name</Label>
+                                    <Input
+                                        id="chat-agent-name"
+                                        {...chatAgentForm.register('name')}
+                                        placeholder="Chat Agent"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="chat-agent-description">Agent Description</Label>
+                                    <Textarea
+                                        id="chat-agent-description"
+                                        {...chatAgentForm.register('description')}
+                                        placeholder="AI chat agent with knowledge base access"
+                                        rows={3}
+                                        className="resize-none"
+                                    />
+                                    <p className="text-sm text-gray-500">
+                                        A brief description of what this chat agent does. It will have access to your knowledge base to answer questions.
+                                    </p>
+                                </div>
+                                <Button
+                                    type="submit"
+                                    disabled={chatAgentLoading || !accountConfig?.rag_id}
+                                    className="flex items-center gap-2"
+                                >
+                                    <Save className="h-4 w-4" />
+                                    {chatAgentLoading ? 'Creating...' : (accountConfig?.chat_agent_id ? 'Agent Already Created' : 'Create Chat Agent')}
+                                </Button>
+                                {!accountConfig?.rag_id && (
+                                    <p className="text-sm text-orange-600">
+                                        Please create an interview agent first to establish a knowledge base.
+                                    </p>
+                                )}
+                            </form>
+
+                            {accountConfig?.chat_agent_id && (
+                                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-md">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <CheckCircle className="h-4 w-4 text-green-600" />
+                                        <span className="font-medium text-green-800">Chat Agent Configuration</span>
+                                    </div>
+                                    <div className="text-sm text-green-700 space-y-1">
+                                        <p><strong>Chat Agent ID:</strong> {accountConfig.chat_agent_id}</p>
+                                        {accountConfig.rag_id && <p><strong>Knowledge Base ID:</strong> {accountConfig.rag_id}</p>}
+                                        <p><strong>Last Updated:</strong> {accountConfig.updated_at ? new Date(accountConfig.updated_at).toLocaleDateString() : 'N/A'}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!accountConfig?.chat_agent_id && accountConfig?.rag_id && (
+                                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                                    <p className="text-sm text-blue-700">
+                                        Create a chat agent to enable knowledge base-powered conversations. This agent will be automatically linked to your existing knowledge base.
                                     </p>
                                 </div>
                             )}

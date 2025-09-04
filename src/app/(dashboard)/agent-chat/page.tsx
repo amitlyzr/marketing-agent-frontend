@@ -55,23 +55,7 @@ export default function AgentChatPage() {
     // Chat agent creation form
     const [chatAgentForm, setChatAgentForm] = useState({
         name: "Chat Assistant",
-        prompt: `You are a helpful AI chat assistant with access to a knowledge base of interview conversations and insights.
-
-Your role is to:
-
-1. **Answer Questions**: Provide helpful answers based on the knowledge base and general AI capabilities.
-
-2. **Analyze Interviews**: Help analyze interview data, patterns, and insights from the knowledge base.
-
-3. **Provide Recommendations**: Offer suggestions and recommendations based on interview history and best practices.
-
-4. **Be Conversational**: Maintain a friendly, professional, and helpful tone in all interactions.
-
-5. **Use Knowledge Base**: When relevant, reference information from the interview knowledge base to provide more accurate and contextual responses.
-
-6. **Stay Professional**: Keep conversations professional while being approachable and helpful.
-
-Remember to be concise, accurate, and helpful in your responses.`
+        prompt: ""
     });
 
     // Load account configuration
@@ -113,8 +97,7 @@ Remember to be concise, accurate, and helpful in your responses.`
                 userId,
                 chatAgentForm.prompt,
                 token,
-                chatAgentForm.name,
-                "AI chat assistant with knowledge base access"
+                chatAgentForm.name
             );
             
             toast.success('Chat agent created and linked with knowledge base successfully!');

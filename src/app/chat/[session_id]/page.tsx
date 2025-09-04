@@ -325,19 +325,23 @@ export default function ChatPage() {
         setError(null);
     
         try {
-            const sessionData = parseSessionId(session_id);
-            
-            const response = await fetch('/api/complete-interview', {
+            const response = await fetch(`/api/complete-interview/${session_id}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id,
-                    user_id: sessionData.user_id,
-                    email: sessionData.email
-                })
+                }
             });
+            // const response = await fetch(`/api/complete-interview`, {
+            //     method: 'POST',
+            //     headers: {
+            //         'Content-Type': 'application/json',
+            //     },
+            //     body: JSON.stringify({
+            //         session_id,
+            //         user_id: sessionData.user_id,
+            //         email: sessionData.email
+            //     })
+            // });
     
             const result = await response.json();
     
