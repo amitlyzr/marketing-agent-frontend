@@ -9,15 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, Download, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { useAuth } from "../providers/AuthProvider";
 
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface PDF {
     id: string;
     email: string;
     pdf_url: string;
+    signed_url: string;
     completed_at: string;
     session_id: string;
     message_count: number;
     type: string;
     kb_trained: boolean;
+    signed_url_expires_at?: string;
 }
 
 export function KnowledgeBasePage() {
@@ -38,8 +42,8 @@ export function KnowledgeBasePage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`http://localhost:8000/knowledge-base/pdfs/${userId}`);
-            
+            const response = await fetch(`${BACKEND_API_URL}/knowledge-base/pdfs/${userId}`);
+
             if (!response.ok) {
                 throw new Error(`Failed to fetch PDFs: ${response.status} ${response.statusText}`);
             }
@@ -59,8 +63,48 @@ export function KnowledgeBasePage() {
         fetchPdfs();
     }, [fetchPdfs]);
 
-    const openPdf = (pdfUrl: string) => {
-        window.open(pdfUrl, '_blank');
+    const openPdf = async (pdf: PDF) => {
+        try {
+            // Use signed URL if available and not expired, otherwise fallback to regular URL
+            let url = pdf.signed_url || pdf.pdf_url;
+            
+            // Check if signed URL is expired or about to expire (in next 5 minutes)
+            const now = new Date();
+            const expiresAt = pdf.signed_url_expires_at ? new Date(pdf.signed_url_expires_at) : null;
+            const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
+            
+            if (!pdf.signed_url || (expiresAt && expiresAt < fiveMinutesFromNow)) {
+                // If signed URL is expired or about to expire, fetch a new one
+                const response = await fetch(`/api/pdfs/${pdf.id}/signed-url`);
+                if (response.ok) {
+                    const data = await response.json();
+                    url = data.signed_url;
+                    // Update the PDF object with the new URL and expiration
+                    pdf.signed_url = data.signed_url;
+                    pdf.signed_url_expires_at = data.expires_at;
+                } else {
+                    console.error('Failed to get signed URL, using direct URL');
+                    url = pdf.pdf_url;
+                }
+            }
+            
+            if (!url) {
+                console.error('No valid URL available for PDF');
+                setError('No valid URL available for PDF');
+                return;
+            }
+            
+            // Open in new tab for viewing
+            const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+            
+            // If window couldn't be opened, show error
+            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                setError('Could not open PDF. Please check your popup blocker.');
+            }
+        } catch (error) {
+            console.error('Error opening PDF:', error);
+            setError('Failed to open PDF. Please try again.');
+        }
     };
 
     const refreshPdfs = async () => {
@@ -208,22 +252,23 @@ export function KnowledgeBasePage() {
                                                     {pdf.session_id && (
                                                         <>
                                                             <span>•</span>
-                                                            <span className="text-xs font-mono bg-gray-100 px-1 rounded">
-                                                                {pdf.session_id.substring(0, 8)}...
+                                                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
+                                                                {pdf.session_id.slice(0, 8)}...
                                                             </span>
                                                         </>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
-                                        <Button
-                                            onClick={() => openPdf(pdf.pdf_url)}
-                                            variant="outline"
-                                            size="sm"
-                                            className="flex items-center gap-2 ml-4 flex-shrink-0"
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="gap-1"
+                                            onClick={() => openPdf(pdf)}
+                                            title={pdf.signed_url_expires_at ? `Expires at: ${new Date(pdf.signed_url_expires_at).toLocaleString()}` : ''}
                                         >
                                             <Download className="h-4 w-4" />
-                                            View PDF
+                                            Download
                                         </Button>
                                     </div>
                                 ))}

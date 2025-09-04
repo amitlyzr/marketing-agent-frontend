@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 
 export function Dashboard() {
-    const { isAuthenticated, userId, email, token } = useAuth();
+    const { isAuthenticated, userId, email } = useAuth();
 
     if (!isAuthenticated) {
         return null;

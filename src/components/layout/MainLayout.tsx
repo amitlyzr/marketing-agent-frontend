@@ -56,14 +56,6 @@ export function MainLayout({ children, activeTab = "dashboard", onTabChange }: M
                             <Mail className="h-4 w-4" />
                             Emails
                         </TabsTrigger>
-                        {/* <TabsTrigger value="interviews" className="flex items-center gap-2">
-                            <Users className="h-4 w-4" />
-                            Interviews
-                        </TabsTrigger> */}
-                        {/* <TabsTrigger value="templates" className="flex items-center gap-2">
-                            <FileText className="h-4 w-4" />
-                            Templates
-                        </TabsTrigger> */}
                         <TabsTrigger value="settings" className="flex items-center gap-2">
                             <Settings className="h-4 w-4" />
                             Settings

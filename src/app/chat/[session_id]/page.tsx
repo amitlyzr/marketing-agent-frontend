@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CheckCircle, Loader2, AlertCircle, MessageCircle, Send, User, Bot } from "lucide-react";
 
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 interface ChatMessage {
     id: string;
     role: 'user' | 'assistant';
@@ -62,13 +64,7 @@ export default function ChatPage() {
 
     // Debug logging
     useEffect(() => {
-    //     console.log('URL Debug Info:');
-    //     console.log('Raw session_id from params:', rawSessionId);
-    //     console.log('Cleaned session_id:', session_id);
         console.log('Agent_id from query:', agent_id);
-    //     console.log('Full URL:', window.location.href);
-    //     console.log('Search params object:', Object.fromEntries(searchParams.entries()));
-    //     console.log('Window search:', window.location.search);
     }, [agent_id]);
 
     // Chat state
@@ -98,8 +94,6 @@ export default function ChatPage() {
         };
     };
 
-    console.log(parseSessionId('mem_cme8pevbm00hi0wmc3e164dvx+nhce.amit@gmail.com'))
-
     // Scroll to bottom when new messages arrive
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -118,8 +112,8 @@ export default function ChatPage() {
             
             // Parse session_id to validate format
             parseSessionId(session_id);
-            
-            let url = `http://localhost:8000/chat/history/${session_id}`;
+
+            let url = `${BACKEND_API_URL}/chat/history/${session_id}`;
             if (agent_id) {
                 url += `?agent_id=${agent_id}`;
             }
@@ -172,7 +166,7 @@ export default function ChatPage() {
 
         try {
             // Send message to interview endpoint (streaming with message count)
-            const response = await fetch('http://localhost:8000/chat/interview/send/stream', {
+            const response = await fetch(`${BACKEND_API_URL}/chat/interview/send/stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -290,115 +284,37 @@ export default function ChatPage() {
         }
     };
 
-    // Test KB Training (for development only)
-    const testKbTraining = async () => {
+    const completeInterview = async () => {
         if (!session_id) return;
-        
+    
         setCompleting(true);
         setError(null);
-        
+    
         try {
             const sessionData = parseSessionId(session_id);
-            const kbTrainingResponse = await fetch('http://localhost:8000/interview/test-kb-training', {
+            
+            const response = await fetch('/api/complete-interview', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
+                    session_id,
                     user_id: sessionData.user_id,
-                    email: sessionData.email,
-                    rag_id: agent_id
+                    email: sessionData.email
                 })
             });
-
-            if (kbTrainingResponse.ok) {
-                const kbTrainingResult = await kbTrainingResponse.json();
-                console.log('Test KB training completed:', kbTrainingResult);
-                alert('KB Training completed successfully! Check console for details.');
-            } else {
-                const error = await kbTrainingResponse.text();
-                throw new Error(`KB Training failed: ${error}`);
-            }
-        } catch (err: any) {
-            setError(`KB Training error: ${err.message}`);
-            console.error('KB Training error:', err);
-        } finally {
-            setCompleting(false);
-        }
-    };
-
-    const completeInterview = async () => {
-        if (!session_id) return;
-
-        setCompleting(true);
-        setError(null);
-
-        try {
-            const sessionData = parseSessionId(session_id);
-            
-            const response = await fetch(`http://localhost:8000/chat/interview/complete/${session_id}`, {
-                method: 'POST'
-            });
-
-            if (!response.ok) {
-                const errorData = await response.text();
-                throw new Error(`Failed to complete interview: ${errorData}`);
-            }
-
+    
             const result = await response.json();
-            console.log('Interview completed:', result);
-
-            try {
-                const processResponse = await fetch('http://localhost:8000/interview/process', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        user_id: sessionData.user_id,
-                        email: sessionData.email,
-                        rag_id: agent_id // Use agent_id as rag_id
-                    })
-                });
-
-                if (processResponse.ok) {
-                    console.log('Interview processing completed successfully');
-                } else {
-                    console.warn('Interview processing failed, but interview marked as completed');
-                }
-            } catch (processError) {
-                console.warn('Interview processing error:', processError);
-                // Don't fail the whole completion if processing fails
+    
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to complete interview');
             }
-
-            // Call the test KB training endpoint (independent of interview processing)
-            try {
-                const kbTrainingResponse = await fetch('http://localhost:8000/interview/test-kb-training', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        user_id: sessionData.user_id,
-                        email: sessionData.email
-                    })
-                });
-
-                if (kbTrainingResponse.ok) {
-                    const kbTrainingResult = await kbTrainingResponse.json();
-                    console.log('KB training completed:', kbTrainingResult);
-                } else {
-                    console.warn('KB training failed, but interview was processed');
-                }
-            } catch (kbTrainingError) {
-                console.warn('KB training error:', kbTrainingError);
-                // Don't fail the whole completion if KB training fails
-            }
-
-            // Update local state
+    
+            console.log('Interview completed via API:', result);
             setCompleted(true);
             setSession(prev => prev ? { ...prev, session_status: 'completed' } : null);
-
+    
         } catch (err: any) {
             setError(`Failed to complete interview: ${err.message}`);
             console.error('Error completing interview:', err);
@@ -490,24 +406,6 @@ export default function ChatPage() {
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                     <span>Typing...</span>
                                 </div>
-                            )}
-                            {process.env.NODE_ENV === 'development' && (
-                                <Button 
-                                    onClick={testKbTraining}
-                                    variant="outline" 
-                                    size="sm"
-                                    disabled={completing}
-                                    className="ml-2"
-                                >
-                                    {completing ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Testing KB Training...
-                                        </>
-                                    ) : (
-                                        'Test KB Training'
-                                    )}
-                                </Button>
                             )}
                         </div>
                     </div>
