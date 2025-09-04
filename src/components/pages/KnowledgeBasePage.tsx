@@ -6,7 +6,7 @@ import { TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Download, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { FileText, Download, Loader2, AlertCircle, RefreshCw, List, Folder } from "lucide-react";
 import { useAuth } from "../providers/AuthProvider";
 
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -22,13 +22,22 @@ interface PDF {
     type: string;
     kb_trained: boolean;
     signed_url_expires_at?: string;
+    title?: string;
+    subheading?: string;
+    category?: string;
+}
+
+interface CategorizedPDFs {
+    [category: string]: PDF[];
 }
 
 export function KnowledgeBasePage() {
     const { userId } = useAuth();
     const [pdfs, setPdfs] = useState<PDF[]>([]);
+    const [categorizedPdfs, setCategorizedPdfs] = useState<CategorizedPDFs>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'categorized' | 'all'>('categorized');
 
     console.log(userId);
 
@@ -42,15 +51,39 @@ export function KnowledgeBasePage() {
         try {
             setLoading(true);
             setError(null);
+
+            // Fetch categorized PDFs first
+            const categorizedResponse = await fetch(`${BACKEND_API_URL}/knowledge-base/pdfs-categorized/${userId}`);
+            
+            if (categorizedResponse.ok) {
+                const categorizedData = await categorizedResponse.json();
+                console.log('Categorized PDFs Response:', categorizedData);
+                
+                // Check if we have categories data
+                if (categorizedData.categories && Object.keys(categorizedData.categories).length > 0) {
+                    setCategorizedPdfs(categorizedData.categories);
+                } else {
+                    // No categorized data, clear it
+                    setCategorizedPdfs({});
+                }
+            } else {
+                // If categorized endpoint fails, clear categorized data
+                setCategorizedPdfs({});
+            }
+
+            // Always fetch all PDFs as fallback
             const response = await fetch(`${BACKEND_API_URL}/knowledge-base/pdfs/${userId}`);
 
-            if (!response.ok) {
+            if (response.ok) {
+                const data = await response.json();
+                console.log('All PDFs Response:', data);
+                setPdfs(data.pdfs || []);
+            } else if (response.status === 404) {
+                // No PDFs found, clear arrays
+                setPdfs([]);
+            } else {
                 throw new Error(`Failed to fetch PDFs: ${response.status} ${response.statusText}`);
             }
-            
-            const data = await response.json();
-            console.log('API Response:', data); // Debug log
-            setPdfs(data.pdfs || []);
         } catch (err) {
             console.error('Failed to fetch PDFs:', err);
             setError(err instanceof Error ? err.message : 'Failed to fetch PDFs');
@@ -112,6 +145,119 @@ export function KnowledgeBasePage() {
         await fetchPdfs();
     };
 
+    const renderPDFItem = (pdf: PDF) => (
+        <div key={pdf.id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-3 flex-1">
+                <FileText className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium truncate">
+                            {pdf.title || pdf.email}
+                        </p>
+                        <Badge 
+                            variant={pdf.type === 'chat_session' ? 'default' : 'secondary'} 
+                            className="text-xs flex-shrink-0"
+                        >
+                            {pdf.type === 'chat_session' ? 'Chat Session' : 'Interview'}
+                        </Badge>
+                        {pdf.kb_trained && (
+                            <Badge variant="outline" className="text-xs text-green-600 border-green-200 flex-shrink-0">
+                                KB Trained
+                            </Badge>
+                        )}
+                    </div>
+                    <div className="text-sm text-gray-500 mb-1">
+                        {pdf.subheading && <p className="italic">{pdf.subheading}</p>}
+                        {!pdf.subheading && <p>{pdf.email}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span>
+                            {pdf.completed_at 
+                                ? new Date(pdf.completed_at).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                })
+                                : 'Unknown date'
+                            }
+                        </span>
+                        {pdf.message_count > 0 && (
+                            <>
+                                <span>•</span>
+                                <span>{pdf.message_count} messages</span>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+            <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-1"
+                onClick={() => openPdf(pdf)}
+                title={pdf.signed_url_expires_at ? `Expires at: ${new Date(pdf.signed_url_expires_at).toLocaleString()}` : ''}
+            >
+                <Download className="h-4 w-4" />
+                Download
+            </Button>
+        </div>
+    );
+
+    const renderCategorizedView = () => {
+        const categoryKeys = Object.keys(categorizedPdfs);
+        
+        if (categoryKeys.length === 0) {
+            return null;
+        }
+
+        return (
+            <div className="space-y-6">
+                {categoryKeys.map(category => (
+                    <div key={category} className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Folder className="h-5 w-5 text-blue-600" />
+                            <h3 className="text-lg font-semibold">{category}</h3>
+                            <Badge variant="secondary" className="text-xs">
+                                {categorizedPdfs[category].length}
+                            </Badge>
+                        </div>
+                        <div className="grid gap-4">
+                            {categorizedPdfs[category].map(renderPDFItem)}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    const renderAllPdfsView = () => {
+        if (pdfs.length === 0) {
+            return null;
+        }
+
+        return (
+            <div className="grid gap-4">
+                {pdfs.map(renderPDFItem)}
+            </div>
+        );
+    };
+
+    const hasAnyCategorizedPdfs = Object.keys(categorizedPdfs).length > 0;
+    const totalCategorizedCount = Object.values(categorizedPdfs).reduce((sum, pdfs) => sum + pdfs.length, 0);
+
+    // Auto-switch to the appropriate view based on available data
+    useEffect(() => {
+        if (hasAnyCategorizedPdfs && viewMode === 'all' && pdfs.length === 0) {
+            // If we have categorized PDFs but no PDFs in all view, switch to categorized
+            setViewMode('categorized');
+        } else if (!hasAnyCategorizedPdfs && viewMode === 'categorized' && pdfs.length > 0) {
+            // If we have no categorized PDFs but have PDFs in all view, switch to all
+            setViewMode('all');
+        }
+    }, [hasAnyCategorizedPdfs, pdfs.length, viewMode]);
+
     return (
         <TabsContent value="knowledge-base" className="space-y-6">
             <div className="flex items-center justify-between">
@@ -136,12 +282,40 @@ export function KnowledgeBasePage() {
             {/* Knowledge Base PDFs Section */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <FileText className="h-5 w-5" />
-                        Knowledge Base Documents
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            <CardTitle>Knowledge Base Documents</CardTitle>
+                        </div>
+                        {(hasAnyCategorizedPdfs || pdfs.length > 0) && (
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant={viewMode === 'categorized' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setViewMode('categorized')}
+                                    className="gap-1"
+                                    disabled={!hasAnyCategorizedPdfs}
+                                >
+                                    <Folder className="h-4 w-4" />
+                                    Categories ({Object.keys(categorizedPdfs).length})
+                                </Button>
+                                <Button
+                                    variant={viewMode === 'all' ? 'default' : 'outline'}
+                                    size="sm"
+                                    onClick={() => setViewMode('all')}
+                                    className="gap-1"
+                                >
+                                    <List className="h-4 w-4" />
+                                    All Documents ({pdfs.length})
+                                </Button>
+                            </div>
+                        )}
+                    </div>
                     <CardDescription>
-                        All processed conversations and interview transcripts stored in your knowledge base
+                        {viewMode === 'categorized' 
+                            ? 'Documents organized by AI-generated categories'
+                            : 'All processed conversations and interview transcripts stored in your knowledge base'
+                        }
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -157,7 +331,7 @@ export function KnowledgeBasePage() {
                                 {error}
                             </AlertDescription>
                         </Alert>
-                    ) : pdfs.length === 0 ? (
+                    ) : !hasAnyCategorizedPdfs && pdfs.length === 0 ? (
                         <div className="text-center py-12">
                             <FileText className="h-16 w-16 mx-auto mb-4 text-gray-300" />
                             <h3 className="text-lg font-medium text-gray-900 mb-2">No documents available</h3>
@@ -198,7 +372,7 @@ export function KnowledgeBasePage() {
                                 
                                 <div className="mt-4 pt-3 border-t border-gray-200">
                                     <p className="text-xs text-gray-500 mb-2">
-                                        💡 <strong>Tip:</strong> Documents are automatically added when you complete interviews or process chat sessions
+                                        💡 <strong>Tip:</strong> Documents are automatically categorized using AI
                                     </p>
                                 </div>
                             </div>
@@ -207,72 +381,34 @@ export function KnowledgeBasePage() {
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <p className="text-sm text-gray-600">
-                                    Found {pdfs.length} document{pdfs.length !== 1 ? 's' : ''} in your knowledge base
+                                    {viewMode === 'categorized' 
+                                        ? `Found ${totalCategorizedCount} document${totalCategorizedCount !== 1 ? 's' : ''} in ${Object.keys(categorizedPdfs).length} categories`
+                                        : `Found ${pdfs.length} document${pdfs.length !== 1 ? 's' : ''} in your knowledge base`
+                                    }
                                 </p>
                             </div>
-                            <div className="grid gap-4">
-                                {pdfs.map((pdf) => (
-                                    <div key={pdf.id} className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow">
-                                        <div className="flex items-center gap-3 flex-1">
-                                            <FileText className="h-5 w-5 text-blue-600 flex-shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <p className="font-medium truncate">{pdf.email}</p>
-                                                    <Badge 
-                                                        variant={pdf.type === 'chat_session' ? 'default' : 'secondary'} 
-                                                        className="text-xs flex-shrink-0"
-                                                    >
-                                                        {pdf.type === 'chat_session' ? 'Chat Session' : 'Interview'}
-                                                    </Badge>
-                                                    {pdf.kb_trained && (
-                                                        <Badge variant="outline" className="text-xs text-green-600 border-green-200 flex-shrink-0">
-                                                            KB Trained
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2 text-sm text-gray-500">
-                                                    <span>
-                                                        {pdf.completed_at 
-                                                            ? new Date(pdf.completed_at).toLocaleDateString('en-US', {
-                                                                year: 'numeric',
-                                                                month: 'short',
-                                                                day: 'numeric',
-                                                                hour: '2-digit',
-                                                                minute: '2-digit'
-                                                            })
-                                                            : 'Unknown date'
-                                                        }
-                                                    </span>
-                                                    {pdf.message_count > 0 && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span>{pdf.message_count} message{pdf.message_count !== 1 ? 's' : ''}</span>
-                                                        </>
-                                                    )}
-                                                    {pdf.session_id && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                                                                {pdf.session_id.slice(0, 8)}...
-                                                            </span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <Button 
-                                            variant="outline" 
-                                            size="sm" 
-                                            className="gap-1"
-                                            onClick={() => openPdf(pdf)}
-                                            title={pdf.signed_url_expires_at ? `Expires at: ${new Date(pdf.signed_url_expires_at).toLocaleString()}` : ''}
-                                        >
-                                            <Download className="h-4 w-4" />
-                                            Download
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
+                            
+                            {viewMode === 'categorized' && hasAnyCategorizedPdfs ? (
+                                renderCategorizedView()
+                            ) : viewMode === 'categorized' && !hasAnyCategorizedPdfs && pdfs.length > 0 ? (
+                                <div className="text-center py-8">
+                                    <Folder className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                                    <h3 className="text-lg font-medium text-gray-900 mb-2">No categorized documents</h3>
+                                    <p className="text-gray-500 mb-4">
+                                        Your documents haven&apos;t been categorized yet, but you have {pdfs.length} document{pdfs.length !== 1 ? 's' : ''} available.
+                                    </p>
+                                    <Button 
+                                        onClick={() => setViewMode('all')}
+                                        variant="outline"
+                                        className="gap-2"
+                                    >
+                                        <List className="h-4 w-4" />
+                                        View All Documents
+                                    </Button>
+                                </div>
+                            ) : (
+                                renderAllPdfsView()
+                            )}
                         </div>
                     )}
                 </CardContent>

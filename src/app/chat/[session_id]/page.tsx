@@ -164,6 +164,12 @@ export default function ChatPage() {
         const currentMessage = newMessage.trim();
         setNewMessage("");
 
+        // Set a timeout as safety measure to reset sending state
+        const timeoutId = setTimeout(() => {
+            console.warn('Stream timeout - forcing reset of sending state');
+            setSending(false);
+        }, 30000); // 30 second timeout
+
         try {
             // Send message to interview endpoint (streaming with message count)
             const response = await fetch(`${BACKEND_API_URL}/chat/interview/send/stream`, {
@@ -201,61 +207,82 @@ export default function ChatPage() {
 
             let fullResponse = "";
             let receivedMessageCount = 0;
+            let streamCompleted = false;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                const chunk = new TextDecoder().decode(value);
-                const lines = chunk.split('\n');
+                    const chunk = new TextDecoder().decode(value);
+                    const lines = chunk.split('\n');
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        
-                        if (data === '[DONE]') {
-                            break;
-                        }
-
-                        // Handle both JSON and plain text responses
-                        try {
-                            const parsed = JSON.parse(data);
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
                             
-                            // Handle message count metadata
-                            if (parsed.message_count) {
-                                receivedMessageCount = parsed.message_count;
+                            if (data === '[DONE]') {
+                                console.log('Stream completed: [DONE] received');
+                                streamCompleted = true;
+                                break;
                             }
-                            
-                            // Handle content
-                            if (parsed.content) {
-                                fullResponse += parsed.content;
+
+                            // Handle both JSON and plain text responses
+                            try {
+                                const parsed = JSON.parse(data);
                                 
-                                // Update the assistant message content in real-time
-                                setMessages(prev => prev.map(msg => 
-                                    msg.id === assistantMessage.id 
-                                        ? { ...msg, content: fullResponse }
-                                        : msg
-                                ));
-                            }
-                        } catch {
-                            // If not JSON, treat as plain text content
-                            if (data.trim()) {
-                                fullResponse += data;
+                                // Handle message count metadata
+                                if (parsed.message_count) {
+                                    receivedMessageCount = parsed.message_count;
+                                }
                                 
-                                // Update the assistant message content in real-time
-                                setMessages(prev => prev.map(msg => 
-                                    msg.id === assistantMessage.id 
-                                        ? { ...msg, content: fullResponse }
-                                        : msg
-                                ));
+                                // Handle content
+                                if (parsed.content) {
+                                    fullResponse += parsed.content;
+                                    
+                                    // Update the assistant message content in real-time
+                                    setMessages(prev => prev.map(msg => 
+                                        msg.id === assistantMessage.id 
+                                            ? { ...msg, content: fullResponse }
+                                            : msg
+                                    ));
+                                }
+                            } catch {
+                                // If not JSON, treat as plain text content
+                                if (data.trim()) {
+                                    fullResponse += data;
+                                    
+                                    // Update the assistant message content in real-time
+                                    setMessages(prev => prev.map(msg => 
+                                        msg.id === assistantMessage.id 
+                                            ? { ...msg, content: fullResponse }
+                                            : msg
+                                    ));
+                                }
                             }
                         }
                     }
+
+                    // Break out of the outer loop when stream is completed
+                    if (streamCompleted) {
+                        console.log('Breaking out of stream loop - completion detected');
+                        break;
+                    }
+                }
+
+                console.log('Stream reading completed successfully');
+            } finally {
+                // Ensure reader is properly closed
+                try {
+                    reader.releaseLock();
+                } catch (e) {
+                    console.warn('Error releasing reader lock:', e);
                 }
             }
 
             // Update session state with message count from backend
             if (receivedMessageCount > 0) {
+                console.log('Updating session with message count:', receivedMessageCount);
                 setSession(prev => prev ? {
                     ...prev,
                     message_count: receivedMessageCount
@@ -265,6 +292,7 @@ export default function ChatPage() {
             } else {
                 // Fallback if message count wasn't received
                 const estimatedCount = messages.length + 2;
+                console.log('Using estimated message count:', estimatedCount);
                 setSession(prev => prev ? {
                     ...prev,
                     message_count: estimatedCount
@@ -273,6 +301,9 @@ export default function ChatPage() {
                 setCanComplete(estimatedCount >= 5);
             }
 
+            console.log('Message sent successfully, clearing error state');
+            setError(null); // Clear any previous errors on successful completion
+
         } catch (err: any) {
             setError(`Failed to send message: ${err.message}`);
             console.error('Error sending message:', err);
@@ -280,6 +311,9 @@ export default function ChatPage() {
             // Remove the user message on error
             setMessages(prev => prev.slice(0, -1));
         } finally {
+            // Clear the timeout and always reset sending state
+            clearTimeout(timeoutId);
+            console.log('Resetting sending state to false');
             setSending(false);
         }
     };
