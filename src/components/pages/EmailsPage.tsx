@@ -9,7 +9,7 @@ import { TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Upload, Mail, Trash2, Eye, X, RefreshCw, RotateCcw, AlertTriangle, Settings } from "lucide-react";
+import { Upload, Mail, Trash2, Eye, X, RefreshCw, RotateCcw, AlertTriangle, Settings, AlertCircle, Plus } from "lucide-react";
 import { useAuth } from '@/components/providers/AuthProvider';
 import { emailApi, interviewApi, smtpApi, schedulerApi, accountApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -379,7 +379,7 @@ export function EmailsPage() {
 
     if (loading || configurationChecking) {
         return (
-            <TabsContent value="emails" className="space-y-6">
+            <TabsContent value="emails" className="space-y-6 mt-4">
                 <Card>
                     <CardContent className="p-6">
                         <div className="animate-pulse space-y-4">
@@ -398,7 +398,7 @@ export function EmailsPage() {
     }
 
     return (
-        <TabsContent value="emails" className="space-y-6">
+        <TabsContent value="emails" className="space-y-6 mt-4">
             {/* Configuration Warning */}
             {!configurationValid && (
                 <Alert variant="destructive" className="mb-6">
@@ -551,46 +551,58 @@ export function EmailsPage() {
                                                     </TableCell>
                                                     <TableCell>
                                                         <div className="flex items-center gap-2">
-                                                            <Dialog open={threadOpen && threadEmail === email.email} onOpenChange={setThreadOpen}>
+                                                            <Dialog open={threadOpen && threadEmail === email.email} onOpenChange={(open) => {
+                                                                if (!open) {
+                                                                    setThreadOpen(false);
+                                                                    setThreadEmail(null);
+                                                                }
+                                                            }}>
                                                                 <DialogTrigger asChild>
                                                                     <Button variant="ghost" size="sm" onClick={() => handleViewThread(email.email)}>
                                                                         <Eye className="h-4 w-4" />
                                                                     </Button>
                                                                 </DialogTrigger>
-                                                                <DialogContent className="max-w-2xl">
-                                                                    <DialogHeader>
-                                                                        <DialogTitle>Email Thread for {email.email}</DialogTitle>
-                                                                        <DialogDescription>
+                                                                <DialogContent className="max-w-[90vw] sm:max-w-[80vw] lg:max-w-4xl max-h-[85vh] overflow-hidden flex flex-col mx-4">
+                                                                    <DialogHeader className="flex-shrink-0 pb-4">
+                                                                        <DialogTitle className="text-lg font-semibold truncate">Email Thread for {email.email}</DialogTitle>
+                                                                        <DialogDescription className="text-sm">
                                                                             All follow-up emails sent to this contact
                                                                             {interviewStatus && (
-                                                                                <div className="mt-2">
-                                                                                    <span className="text-sm">Interview Status: </span>
+                                                                                <div className="mt-2 flex items-center gap-2">
+                                                                                    <span className="text-sm">Interview Status:</span>
                                                                                     {getInterviewStatusBadge(interviewStatus.status)}
                                                                                 </div>
                                                                             )}
                                                                         </DialogDescription>
                                                                     </DialogHeader>
-                                                                    {threadLoading ? (
-                                                                        <div className="py-8 text-center text-muted-foreground">Loading thread...</div>
-                                                                    ) : emailThread && emailThread.thread && emailThread.thread.length > 0 ? (
-                                                                        <ScrollArea className="max-h-[400px]">
-                                                                            <ul className="space-y-4">
-                                                                                {emailThread.thread.map((item: any, idx: number) => (
-                                                                                    <li key={item._id || idx} className="border rounded-lg p-4 bg-gray-50">
-                                                                                        <div className="flex items-center justify-between mb-2">
-                                                                                            <span className="text-xs text-muted-foreground">Follow-up #{item.follow_up_number}</span>
-                                                                                            <span className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString()}</span>
+                                                                    <div className="flex-1 overflow-hidden min-h-0">
+                                                                        {threadLoading ? (
+                                                                            <div className="py-8 text-center text-muted-foreground">Loading thread...</div>
+                                                                        ) : emailThread && emailThread.thread && emailThread.thread.length > 0 ? (
+                                                                            <ScrollArea className="h-full w-full">
+                                                                                <div className="space-y-3 p-1 pr-3">
+                                                                                    {emailThread.thread.map((item: any, idx: number) => (
+                                                                                        <div key={item._id || idx} className="border rounded-lg p-3 bg-gray-50 shadow-sm">
+                                                                                            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+                                                                                                <span className="text-xs text-muted-foreground font-medium">Follow-up #{item.follow_up_number}</span>
+                                                                                                <span className="text-xs text-muted-foreground">{new Date(item.created_at).toLocaleDateString()}</span>
+                                                                                            </div>
+                                                                                            <div className="font-medium mb-2 text-gray-900 text-sm break-words">{item.subject || 'No Subject'}</div>
+                                                                                            <div className="text-sm break-words text-gray-700 leading-relaxed max-h-32 overflow-y-auto bg-white p-2 rounded border">
+                                                                                                {item.content}
+                                                                                            </div>
+                                                                                            <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                                                <span className="text-xs text-muted-foreground">Status: </span>
+                                                                                                <span className="text-xs font-medium text-blue-600">{item.email_status || 'sent'}</span>
+                                                                                            </div>
                                                                                         </div>
-                                                                                        <div className="font-semibold mb-1">{item.subject || 'No Subject'}</div>
-                                                                                        <div className="whitespace-pre-line text-sm">{item.content}</div>
-                                                                                        <div className="mt-2 text-xs text-muted-foreground">Status: {item.email_status || 'sent'}</div>
-                                                                                    </li>
-                                                                                ))}
-                                                                            </ul>
-                                                                        </ScrollArea>
-                                                                    ) : (
-                                                                        <div className="py-8 text-center text-muted-foreground">No email thread found for this contact.</div>
-                                                                    )}
+                                                                                    ))}
+                                                                                </div>
+                                                                            </ScrollArea>
+                                                                        ) : (
+                                                                            <div className="py-8 text-center text-muted-foreground">No email thread found for this contact.</div>
+                                                                        )}
+                                                                    </div>
                                                                 </DialogContent>
                                                             </Dialog>
                                                             {/* Retry button for failed emails */}

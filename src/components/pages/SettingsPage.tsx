@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, Mail, Clock, Save, CheckCircle, Bot, Brain } from "lucide-react";
+import { Mail, Clock, Save, CheckCircle, Bot, Brain } from "lucide-react";
 import { useAuth } from '@/components/providers/AuthProvider';
 import { smtpApi, schedulerApi, accountApi, agentApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -194,7 +194,7 @@ export function SettingsPage() {
 
         try {
             setAgentLoading(true);
-            
+
             if (accountConfig?.agent_id) {
                 // Agent already exists, show message
                 toast.info('Interview agent already exists. System prompts are predefined and cannot be modified.');
@@ -203,9 +203,9 @@ export function SettingsPage() {
                 if (!token) {
                     throw new Error('Authentication token not available');
                 }
-                
+
                 const result = await agentApi.createAgentWithKB(
-                    userId, 
+                    userId,
                     token,
                     data.name,
                     data.description
@@ -213,7 +213,7 @@ export function SettingsPage() {
                 toast.success('Interview agent and knowledge base created successfully');
                 console.log('Agent creation result:', result);
             }
-            
+
             await loadConfigurations(); // Reload to get updated config
         } catch (error: any) {
             console.error('Error saving agent configuration:', error);
@@ -228,7 +228,7 @@ export function SettingsPage() {
 
         try {
             setChatAgentLoading(true);
-            
+
             if (accountConfig?.chat_agent_id) {
                 // Chat agent already exists, show message
                 toast.info('Chat agent already exists. System prompts are predefined and cannot be modified.');
@@ -237,13 +237,13 @@ export function SettingsPage() {
                 if (!token) {
                     throw new Error('Authentication token not available');
                 }
-                
+
                 if (!accountConfig?.rag_id) {
                     throw new Error('No knowledge base found. Please create an interview agent first.');
                 }
-                
+
                 const result = await agentApi.createChatAgent(
-                    userId, 
+                    userId,
                     token,
                     data.name,
                     data.description
@@ -251,7 +251,7 @@ export function SettingsPage() {
                 toast.success('Chat agent created and linked with knowledge base successfully');
                 console.log('Chat agent creation result:', result);
             }
-            
+
             await loadConfigurations(); // Reload to get updated config
         } catch (error: any) {
             console.error('Error saving chat agent configuration:', error);
@@ -263,7 +263,7 @@ export function SettingsPage() {
 
     if (loadingConfigs) {
         return (
-            <TabsContent value="settings" className="space-y-6">
+            <TabsContent value="settings" className="space-y-6 mt-4">
                 <Card>
                     <CardContent className="p-6">
                         <div className="animate-pulse space-y-4">
@@ -279,27 +279,30 @@ export function SettingsPage() {
     }
 
     return (
-        <TabsContent value="settings" className="space-y-6">
-            <div className="flex items-center gap-2 mb-6">
-                <Settings className="h-6 w-6" />
-                <h2 className="text-2xl font-bold">Settings</h2>
+        <TabsContent value="settings" className="space-y-6 mt-4">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+                    <p className="text-muted-foreground">
+                        Configure your email, scheduling, and AI agent settings
+                    </p>
+                </div>
             </div>
-
             <Tabs defaultValue="email-credentials" className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="email-credentials" className="flex items-center gap-2">
+                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                    <TabsTrigger value="email-credentials" className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm justify-center">
                         <Mail className="h-4 w-4" />
                         Email Credentials
                     </TabsTrigger>
-                    <TabsTrigger value="trigger" className="flex items-center gap-2">
+                    <TabsTrigger value="trigger" className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm justify-center">
                         <Clock className="h-4 w-4" />
                         Trigger Settings
                     </TabsTrigger>
-                    <TabsTrigger value="interview-agent" className="flex items-center gap-2">
+                    <TabsTrigger value="interview-agent" className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm justify-center">
                         <Bot className="h-4 w-4" />
                         Interview Agent
                     </TabsTrigger>
-                    <TabsTrigger value="chat-agent" className="flex items-center gap-2">
+                    <TabsTrigger value="chat-agent" className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm justify-center">
                         <Brain className="h-4 w-4" />
                         Chat Agent
                     </TabsTrigger>
@@ -440,12 +443,12 @@ export function SettingsPage() {
                                             type="number"
                                             min="1"
                                             max="1000"
-                                            placeholder="10"
+                                            placeholder="3"
                                             {...schedulerForm.register('max_limit', {
                                                 required: true,
                                                 valueAsNumber: true,
                                                 min: 1,
-                                                max: 1000
+                                                max: 100
                                             })}
                                         />
                                         <p className="text-xs text-gray-500">Maximum no. of follow-ups</p>
@@ -490,12 +493,6 @@ export function SettingsPage() {
                                     <Badge variant="outline" className="ml-2">
                                         <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
                                         Agent Created
-                                    </Badge>
-                                )}
-                                {accountConfig?.rag_id && (
-                                    <Badge variant="outline" className="ml-1">
-                                        <Brain className="h-3 w-3 mr-1 text-purple-600" />
-                                        KB Linked
                                     </Badge>
                                 )}
                             </CardTitle>

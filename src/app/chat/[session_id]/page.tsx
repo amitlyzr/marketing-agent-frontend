@@ -1,15 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/**
- * Chat Interface for Interview System
- * 
- * Features:
- * 1. Public chat interface (no auth required)
- * 2. Uses session_id as URL path parameter format: user_id+email
- * 3. Agent_id as query parameter
- * 4. Integrates with Lyzr chat API
- * 5. Auto-completes interview after 5 messages
- * 6. Processes interview completion (PDF generation, S3 upload, KB training)
- */
 
 "use client"
 
@@ -20,7 +9,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle, Loader2, AlertCircle, MessageCircle, Send, User, Bot } from "lucide-react";
+import { CheckCircle, Loader2, AlertCircle, MessageCircle, Send, User, Bot, Settings, Moon, Sun } from "lucide-react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import rehypeHighlight from 'rehype-highlight';
+import { useTheme } from 'next-themes';
+import 'katex/dist/katex.min.css';
+import 'highlight.js/styles/github-dark.css';
 
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -43,7 +40,9 @@ export default function ChatPage() {
     const router = useRouter();
     const params = useParams();
     const searchParams = useSearchParams();
+    const { theme, setTheme } = useTheme();
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // Extract session_id from params (decode URL encoding) and agent_id from query
     const rawSessionId = decodeURIComponent(params.session_id as string);
@@ -64,8 +63,13 @@ export default function ChatPage() {
 
     // Debug logging
     useEffect(() => {
+        console.log('=== SESSION DEBUG INFO ===');
+        console.log('Raw params.session_id:', params.session_id);
+        console.log('Raw session_id (decoded):', rawSessionId);
+        console.log('Final session_id:', session_id);
         console.log('Agent_id from query:', agent_id);
-    }, [agent_id]);
+        console.log('========================');
+    }, [agent_id, rawSessionId, session_id]);
 
     // Chat state
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -121,9 +125,19 @@ export default function ChatPage() {
             const response = await fetch(url);
             if (response.ok) {
                 const data = await response.json();
-                setMessages(data.messages || []);
-                setSession(data.session);
-                setCanComplete(data.message_count >= 5);
+                const loadedMessages = data.messages || [];
+                
+                // Simply load messages without any predefined content
+                setMessages(loadedMessages);
+                
+                setSession(data.session || {
+                    user_id: parseSessionId(session_id).user_id,
+                    email: parseSessionId(session_id).email,
+                    agent_id: agent_id || "",
+                    message_count: data.message_count || 0,
+                    session_status: "active"
+                });
+                setCanComplete((data.session?.message_count || data.message_count || 0) >= 5);
                 setCompleted(data.session?.session_status === 'completed' || data.session?.session_status === 'processed');
             } else {
                 // Create new session if chat history doesn't exist
@@ -135,6 +149,9 @@ export default function ChatPage() {
                     message_count: 0,
                     session_status: "active"
                 });
+                
+                // Start with empty messages - no predefined content
+                setMessages([]);
             }
         } catch (err: any) {
             setError(err.message);
@@ -171,15 +188,22 @@ export default function ChatPage() {
         }, 30000); // 30 second timeout
 
         try {
-            // Send message to interview endpoint (streaming with message count)
-            const response = await fetch(`${BACKEND_API_URL}/chat/interview/send/stream`, {
+            console.log('=== SENDING MESSAGE DEBUG ===');
+            console.log('sessionData.user_id:', sessionData.user_id);
+            console.log('agent_id:', agent_id);
+            console.log('session_id being sent:', session_id);
+            console.log('message:', currentMessage);
+            console.log('============================');
+            
+            // Use single chat agent endpoint for all messages - keep it simple
+            const response = await fetch(`${BACKEND_API_URL}/chat/agent/send/stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     user_id: sessionData.user_id,
-                    agent_id: agent_id || "",
+                    agent_id: agent_id || "", // This will be ignored - backend will use chat_agent_id from user account
                     session_id: session_id,
                     message: currentMessage
                 })
@@ -206,7 +230,6 @@ export default function ChatPage() {
             }
 
             let fullResponse = "";
-            let receivedMessageCount = 0;
             let streamCompleted = false;
 
             try {
@@ -231,12 +254,7 @@ export default function ChatPage() {
                             try {
                                 const parsed = JSON.parse(data);
                                 
-                                // Handle message count metadata
-                                if (parsed.message_count) {
-                                    receivedMessageCount = parsed.message_count;
-                                }
-                                
-                                // Handle content
+                                // Handle content from chat agent response
                                 if (parsed.content) {
                                     fullResponse += parsed.content;
                                     
@@ -280,26 +298,16 @@ export default function ChatPage() {
                 }
             }
 
-            // Update session state with message count from backend
-            if (receivedMessageCount > 0) {
-                console.log('Updating session with message count:', receivedMessageCount);
-                setSession(prev => prev ? {
-                    ...prev,
-                    message_count: receivedMessageCount
-                } : null);
-                
-                setCanComplete(receivedMessageCount >= 5);
-            } else {
-                // Fallback if message count wasn't received
-                const estimatedCount = messages.length + 2;
-                console.log('Using estimated message count:', estimatedCount);
-                setSession(prev => prev ? {
-                    ...prev,
-                    message_count: estimatedCount
-                } : null);
-                
-                setCanComplete(estimatedCount >= 5);
-            }
+            // Simple message count update - since we're using chat agent endpoint only
+            // Chat agent endpoint doesn't return message count, so we increment locally
+            const estimatedCount = (session?.message_count || 0) + 1;
+            console.log('Updating session with estimated message count:', estimatedCount);
+            setSession(prev => prev ? {
+                ...prev,
+                message_count: estimatedCount
+            } : null);
+            
+            setCanComplete(estimatedCount >= 5);
 
             console.log('Message sent successfully, clearing error state');
             setError(null); // Clear any previous errors on successful completion
@@ -325,23 +333,18 @@ export default function ChatPage() {
         setError(null);
     
         try {
-            const response = await fetch(`/api/complete-interview/${session_id}`, {
+            const sessionData = parseSessionId(session_id);
+            const response = await fetch(`/api/complete-interview`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                }
+                },
+                body: JSON.stringify({
+                    session_id,
+                    user_id: sessionData.user_id,
+                    email: sessionData.email
+                })
             });
-            // const response = await fetch(`/api/complete-interview`, {
-            //     method: 'POST',
-            //     headers: {
-            //         'Content-Type': 'application/json',
-            //     },
-            //     body: JSON.stringify({
-            //         session_id,
-            //         user_id: sessionData.user_id,
-            //         email: sessionData.email
-            //     })
-            // });
     
             const result = await response.json();
     
@@ -411,40 +414,57 @@ export default function ChatPage() {
     }
 
     return (
-        <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="h-screen flex flex-col bg-background">
             {/* Header - Fixed at top */}
-            <div className="bg-white border-b shadow-sm">
+            <div className="border-b bg-background/80 backdrop-blur-sm">
                 <div className="container mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <MessageCircle className="h-6 w-6 text-blue-600" />
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-lg">
+                                <MessageCircle className="h-5 w-5 text-primary" />
+                            </div>
                             <div>
-                                <h1 className="font-semibold text-lg text-gray-900">Interview Chat</h1>
+                                <h1 className="text-xl font-semibold">Marketing Team Interview</h1>
                                 {session && (
-                                    <p className="text-sm text-gray-600">
+                                    <p className="text-sm text-muted-foreground">
                                         {session.email} • {messages.length} messages • 
-                                        <span className={`font-medium ml-1 ${completed ? 'text-green-600' : 'text-blue-600'}`}>
-                                            {completed ? 'Completed' : 'Active'}
+                                        <span className={`font-medium ml-1 ${completed ? 'text-green-600' : 'text-primary'}`}>
+                                            {completed ? 'Interview Completed' : 'Interview Active'}
                                         </span>
                                     </p>
                                 )}
                             </div>
                         </div>
                         
-                        {/* Status indicators */}
-                        <div className="flex items-center space-x-2">
+                        {/* Controls */}
+                        <div className="flex items-center gap-2">
                             {completed && (
-                                <div className="flex items-center space-x-1 text-green-600 bg-green-50 px-2 py-1 rounded-full text-sm">
+                                <div className="flex items-center gap-1 text-green-600 bg-green-50 dark:bg-green-950 px-2 py-1 rounded-full text-sm">
                                     <CheckCircle className="h-4 w-4" />
                                     <span>Completed</span>
                                 </div>
                             )}
                             {sending && (
-                                <div className="flex items-center space-x-1 text-blue-600 bg-blue-50 px-2 py-1 rounded-full text-sm">
+                                <div className="flex items-center gap-1 text-primary bg-primary/10 px-2 py-1 rounded-full text-sm">
                                     <Loader2 className="h-4 w-4 animate-spin" />
                                     <span>Typing...</span>
                                 </div>
                             )}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                className="h-8 w-8 p-0"
+                            >
+                                {theme === 'dark' ? (
+                                    <Sun className="h-4 w-4" />
+                                ) : (
+                                    <Moon className="h-4 w-4" />
+                                )}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Settings className="h-4 w-4" />
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -473,16 +493,20 @@ export default function ChatPage() {
 
             {/* Chat Messages - Flexible height */}
             <div className="flex-1 container mx-auto px-4 pb-4 min-h-0">
-                <div className="h-full bg-white rounded-lg shadow-sm border overflow-hidden flex flex-col">
+                <div className="h-full bg-background rounded-lg border overflow-hidden flex flex-col shadow-sm">
                     {/* Messages Container */}
                     <div className="flex-1 overflow-hidden">
                         <ScrollArea className="h-full">
-                            <div className="p-6 space-y-6">
+                            <div className="p-4 space-y-4">
                                 {messages.length === 0 ? (
-                                    <div className="text-center text-gray-500 py-12">
-                                        <MessageCircle className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                                        <h3 className="text-lg font-medium mb-2">Start your conversation</h3>
-                                        <p>Welcome to your interview! Feel free to introduce yourself or ask any questions.</p>
+                                    <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                                            <div className="p-4 bg-muted/50 rounded-full mb-4">
+                                                <MessageCircle className="h-12 w-12 text-muted-foreground" />
+                                            </div>
+                                            <h3 className="text-lg font-medium mb-2">Start your conversation</h3>
+                                            <p className="text-muted-foreground max-w-sm">
+                                                Welcome to your interview! Feel free to introduce yourself or ask any questions.
+                                            </p>
                                     </div>
                                 ) : (
                                     messages.map((message) => (
@@ -490,59 +514,63 @@ export default function ChatPage() {
                                             key={message.id}
                                             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                                         >
-                                            <div
-                                                className={`flex items-start space-x-3 max-w-[80%] ${
-                                                    message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
-                                                }`}
-                                            >
-                                                {/* Avatar */}
-                                                <div
-                                                    className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                                        message.role === 'user'
-                                                            ? 'bg-blue-600 text-white'
-                                                            : 'bg-gray-100 text-gray-600'
-                                                    }`}
-                                                >
-                                                    {message.role === 'user' ? (
-                                                        <User className="h-5 w-5" />
-                                                    ) : (
-                                                        <Bot className="h-5 w-5" />
-                                                    )}
-                                                </div>
-                                                
-                                                {/* Message Content */}
-                                                <div className="flex flex-col space-y-1">
-                                                    <div
-                                                        className={`px-4 py-3 rounded-2xl ${
-                                                            message.role === 'user'
-                                                                ? 'bg-blue-600 text-white rounded-br-md'
-                                                                : 'bg-gray-100 text-gray-900 rounded-bl-md'
-                                                        }`}
-                                                    >
-                                                        {message.content ? (
-                                                            <p className="whitespace-pre-wrap break-words leading-relaxed">
-                                                                {message.content}
-                                                            </p>
-                                                        ) : message.role === 'assistant' ? (
-                                                            <div className="flex items-center space-x-1 py-1">
-                                                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]"></div>
-                                                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></div>
-                                                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></div>
-                                                            </div>
-                                                        ) : null}
+                                                <div className={`flex items-start gap-3 max-w-[85%] ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                                    {/* Avatar */}
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                                                        {message.role === 'user' ? (
+                                                            <User className="h-4 w-4" />
+                                                        ) : (
+                                                            <Bot className="h-4 w-4" />
+                                                        )}
                                                     </div>
                                                     
-                                                    {/* Timestamp */}
-                                                    <p className={`text-xs text-gray-500 px-1 ${
-                                                        message.role === 'user' ? 'text-right' : 'text-left'
-                                                    }`}>
-                                                        {new Date(message.timestamp).toLocaleTimeString([], { 
-                                                            hour: '2-digit', 
-                                                            minute: '2-digit' 
-                                                        })}
-                                                    </p>
+                                                    {/* Message Content */}
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className={`px-4 py-3 rounded-2xl ${message.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted rounded-bl-sm'}`}>
+                                                            {message.content ? (
+                                                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                                                    <ReactMarkdown
+                                                                        remarkPlugins={[remarkGfm, remarkMath]}
+                                                                        rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                                                                        components={{
+                                                                            code: ({ className, children, ...props }: any) => {
+                                                                                const match = /language-(\w+)/.exec(className || '');
+                                                                                const isInline = !className?.includes('language-');
+                                                                                return !isInline && match ? (
+                                                                                    <pre className="bg-muted/50 rounded-md p-3 overflow-x-auto">
+                                                                                        <code className={className} {...props}>
+                                                                                            {children}
+                                                                                        </code>
+                                                                                    </pre>
+                                                                                ) : (
+                                                                                    <code className="bg-muted px-1 py-0.5 rounded text-sm" {...props}>
+                                                                                        {children}
+                                                                                    </code>
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        {message.content}
+                                                                    </ReactMarkdown>
+                                                                </div>
+                                                            ) : message.role === 'assistant' ? (
+                                                                <div className="flex items-center gap-1 py-1">
+                                                                    <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-pulse" />
+                                                                    <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-pulse" style={{animationDelay: '0.2s'}} />
+                                                                    <div className="w-2 h-2 bg-muted-foreground/60 rounded-full animate-pulse" style={{animationDelay: '0.4s'}} />
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                        
+                                                        {/* Timestamp */}
+                                                        <p className={`text-xs text-muted-foreground px-1 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
+                                                            {new Date(message.timestamp).toLocaleTimeString([], { 
+                                                                hour: '2-digit', 
+                                                                minute: '2-digit' 
+                                                            })}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            </div>
                                         </div>
                                     ))
                                 )}
@@ -553,22 +581,24 @@ export default function ChatPage() {
 
                     {/* Input Area - Fixed at bottom */}
                     {!completed && (
-                        <div className="border-t bg-gray-50 p-4">
-                            <div className="flex space-x-3">
+                        <div className="border-t bg-background/50 p-4">
+                            <div className="flex items-end gap-3">
                                 <div className="flex-1">
                                     <Input
+                                        ref={inputRef}
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
                                         onKeyPress={handleKeyPress}
-                                        placeholder="Type your message..."
+                                        placeholder="Send a message..."
                                         disabled={sending}
-                                        className="w-full bg-white border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                                        className="min-h-[44px] resize-none border-0 bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring"
                                     />
                                 </div>
                                 <Button
                                     onClick={sendMessage}
                                     disabled={sending || !newMessage.trim()}
-                                    className="bg-blue-600 hover:bg-blue-700 px-6"
+                                    size="sm"
+                                    className="h-11 px-4"
                                 >
                                     {sending ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -580,16 +610,16 @@ export default function ChatPage() {
 
                             {/* Complete Interview Button */}
                             {canComplete && !completed && (
-                                <div className="mt-4 pt-4 border-t border-gray-200">
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <div className="mt-4 pt-4 border-t">
+                                    <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
                                         <div className="flex items-center justify-between">
-                                            <div className="flex items-center space-x-2">
+                                            <div className="flex items-center gap-2">
                                                 <CheckCircle className="h-5 w-5 text-green-600" />
                                                 <div>
-                                                    <p className="text-sm font-medium text-green-800">
+                                                    <p className="text-sm font-medium text-green-800 dark:text-green-200">
                                                         Ready to complete your interview?
                                                     </p>
-                                                    <p className="text-xs text-green-700">
+                                                    <p className="text-xs text-green-700 dark:text-green-300">
                                                         You&apos;ve had a good conversation. You can finish now or continue chatting.
                                                     </p>
                                                 </div>
